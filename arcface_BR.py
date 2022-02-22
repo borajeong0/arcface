@@ -1,5 +1,5 @@
 '''
-train_loader = get_dataloader(rootdir= './CASIA/', batch_size=128)
+train_loader = get_loader(rootdir= './CASIA/', batch_size=128)
 
 root_dir
 batch_size
@@ -27,12 +27,16 @@ import queue as Queue
 import numbers
 
 
+
 #seed
 random_seed = 42
 torch.manual_seed(random_seed)
 torch.cuda.manual_seed(random_seed)
 np.random.seed(random_seed)
 random.seed(random_seed)
+
+
+
 
 
 #dataload: insightface
@@ -49,12 +53,9 @@ def get_dataloader(
             num_workers=2,
             pin_memory=True,
             drop_last=True,
-        )
-       
+        )     
     print('Total data : '+str(len(train_set)))    
     return train_loader
-
-
 
 class MXFaceDataset(Dataset):
     def __init__(self, root_dir, local_rank):
@@ -96,7 +97,6 @@ class MXFaceDataset(Dataset):
         return len(self.imgidx)
     
 class DataLoaderX(DataLoader):
-
     def __init__(self, local_rank, **kwargs):
         super(DataLoaderX, self).__init__(**kwargs)
         self.stream = torch.cuda.Stream(local_rank)
@@ -152,6 +152,9 @@ class BackgroundGenerator(threading.Thread):
         return self
 
 
+    
+    
+    
 #backbone
 class Basicneck(nn.Module):
     expansion: int = 1
@@ -172,11 +175,12 @@ class Basicneck(nn.Module):
         
     def forward(self, x: Tensor):
         identity = x
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
+        out = nn.Sequential(
+            self.bn1,
+            self.relu,
+            self.conv2,
+            self.bn2
+        )(x)
         out += identity
         out = self.relu(out)
 
@@ -206,14 +210,16 @@ class Bottleneck(nn.Module):
                                
     def forward(self, x: Tensor):
         identity = x
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out = self.relu(out)
-        out = self.conv3(out)
-        out = self.bn3(out)
+        out = nn.Sequential(
+            self.conv1,
+            self.bn1,
+            self.relu,
+            self.conv2,
+            self.bn2,
+            self.relu,
+            self.conv3,
+            self.bn3
+        )(x)
         
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -222,7 +228,6 @@ class Bottleneck(nn.Module):
         out = self.relu(out)
 
         return out
-
     
     
 class ResNet(nn.Module):
@@ -250,8 +255,7 @@ class ResNet(nn.Module):
         self.bn2 = nn.BatchNorm2d(512 * block.expansion)
         self.dropout = nn.Dropout(p = dropout, inplace=True)
         self.fc = nn.Linear(512 * block.expansion * self.fc_scale, num_classes)
-        self.bn3 = nn.BatchNorm1d(num_classes)         
-
+        self.bn3 = nn.BatchNorm1d(num_classes)       
                     
     def _make_layer(self,
                     block: Type[Union[Basicneck, Bottleneck]],
@@ -279,16 +283,17 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
     
     def forward(self, x: Tensor):
+        x = nn.Sequential(
+            self.conv1,
+            self.bn1,
+            self.relu,
+            self.maxpool,
 
-        x = self.conv1(x)   
-        x = self.bn1(x)  
-        x = self.relu(x)    
-        x = self.maxpool(x)        
-        
-        x = self.layer1(x) 
-        x = self.layer2(x)       
-        x = self.layer3(x)       
-        x = self.layer4(x)
+            self.layer1,
+            self.layer2,
+            self.layer3,
+            self.layer4                      
+        )(x)
         
         #BN-Dropout-FC-BN
         x = self.bn2(x)
@@ -297,10 +302,9 @@ class ResNet(nn.Module):
         x = self.fc(x.float())
         x = self.bn3(x)
 
-        return x
-    
-    
-    
+        return x  
+   
+  
 def _resnet(block, layers, **kwargs):    
     model = ResNet(block, layers, **kwargs)
     return model
@@ -336,14 +340,15 @@ class IBottleneck(nn.Module):
         self.stride = stride
         
     def forward(self, x):
-        identity = x
-        
-        out = self.bn1(x)
-        out = self.conv1(out)
-        out = self.bn2(out)
-        out = self.prelu(out)
-        out = self.conv2(out)
-        out = self.bn3(out)
+        identity = x        
+        out = nn.Sequential(
+            self.bn1,
+            self.conv1,
+            self.bn2,
+            self.prelu,
+            self.conv2,
+            self.bn3
+        )(x)
         
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -390,7 +395,7 @@ class IResNet(nn.Module):
                  
         if stride != 1 or self.num_filters != out_filters * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(in_channels = self.num_filters, out_channels = out_filters * block.expansion, kernel_size=1,stride=stride,bias=False),
+                nn.Conv2d(in_channels = self.num_filters, out_channels = out_filters * block.expansion, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(out_filters * block.expansion)
             )
                  
@@ -405,14 +410,16 @@ class IResNet(nn.Module):
         return nn.Sequential(*layers)                 
                  
     def forward(self, x: Tensor):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.prelu(x)
-        
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x = nn.Sequential(
+            self.conv1,
+            self.bn1,
+            self.prelu,
+            
+            self.layer1,
+            self.layer2,
+            self.layer3,
+            self.layer4
+        )(x)
         
         #BN-Dropout-FC-BN
         x = self.bn2(x)
@@ -429,6 +436,7 @@ def _iresnet(block, layers, **kwargs):
 
 def iresnet100( **kwargs):
     return _iresnet(IBottleneck, [3, 13, 30, 3], **kwargs)
+
 
 
 
@@ -484,6 +492,9 @@ class CosFace(nn.Module):
         return logits
 
 
+    
+    
+    
 #train
 def train_epoch(model, lossf, optimizer, optimizer_lossf, data_loader, loss_history):
     total_samples = len(data_loader.dataset)
@@ -511,6 +522,11 @@ def train_epoch(model, lossf, optimizer, optimizer_lossf, data_loader, loss_hist
             loss_history.append(loss.item())
     scheduler.step()
     
+    
+    
+    
+    
+   
 '''  verification.py로 대체          
 #test
 def evaluate(model, data_loader, loss_history):
@@ -543,6 +559,9 @@ def evaluate(model, data_loader, loss_history):
               ' (' + acc + '%)\n')
 '''
       
+    
+    
+    
 #Parameter
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]= "1"
