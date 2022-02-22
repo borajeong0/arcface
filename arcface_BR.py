@@ -1,11 +1,3 @@
-'''
-train_loader = get_loader(rootdir= './CASIA/', batch_size=128)
-
-root_dir
-batch_size
-수정 필요
-'''
-
 import torch
 from torch import Tensor, nn, optim
 from torch.nn import Parameter
@@ -567,7 +559,7 @@ os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]= "1"
 
 root_dir= './CASIA/'
-batch_size = 64
+batch_size = 512
 num_classes = 10572
 train_loader = get_dataloader(root_dir, batch_size)
 
