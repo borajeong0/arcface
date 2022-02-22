@@ -435,7 +435,7 @@ def iresnet100( **kwargs):
 
 #loss
 class ArcFace(nn.Module):
-    def __init__(self, batch_size = 512, num_classes = 10572, s = 64.0, m = 0.5,  *args, **kwargs):
+    def __init__(self, batch_size, num_classes, s = 64.0, m = 0.5,  *args, **kwargs):
         super(ArcFace, self).__init__()
         self.s = s
         self.m = m
@@ -448,13 +448,13 @@ class ArcFace(nn.Module):
         x_norm = F.normalize(x) #batch_size x num_classes
         w_norm = F.normalize(self.w) #batch_size x num_classes
         cos_th = torch.matmul(torch.transpose(w_norm, 0, 1), x_norm)  #num_classes x num_classes
-        cos_th_fc = nn.Linear(in_features = 10572, out_features = 1)(cos_th) #num_classes x 1
+        cos_th_fc = nn.Linear(in_features = num_classes, out_features = 1)(cos_th) #num_classes x 1
 #        cos_th_fc = F.linear(x_norm , w_norm) #num_classes x 1
         sin_th = torch.sqrt(1.0 - torch.pow(cos_th, 2)) #num_classes x 1     
         
         cos_th_m = torch.where(cos_th > 0, cos_th_fc * self.cos_m - sin_th * self.sin_m, cos_th_fc - m * self.sin_pi_m) #num_classes x 1
  
-        one_hot = F.one_hot(labels, 10572) #batch_size x num_classes
+        one_hot = F.one_hot(labels, num_classes) #batch_size x num_classes
         one_hot = one_hot.float()
         logits = torch.matmul(one_hot,cos_th_m) + torch.matmul((1 - one_hot), cos_th_fc) # logits = one_hot * (cos_th_m - cos_x) + cos_th_fc
         logits = logits * self.s
@@ -463,7 +463,7 @@ class ArcFace(nn.Module):
 
     
 class CosFace(nn.Module):
-    def __init__(self, s = 64.0, m = 0.40):
+    def __init__(self, num_classes, s = 64.0, m = 0.40):
         super(CosFace, self).__init__()
         self.s = s
         self.m = m
@@ -471,14 +471,14 @@ class CosFace(nn.Module):
     def forward(self, x: Tensor, labels: Tensor):
         x_norm = F.normalize(x) #batch_size x num_classes
         w_norm = F.normalize(self.w) #batch_size x num_classes
-        cos_th = torch.matmul(torch.transpose(w_norm, 0, 1), x_norm, out = torch.Tensor.to('cuda'))  #num_classes x num_classes
-        cos_th_fc = nn.Linear(in_features = 10572, out_features = 1)(cos_th) #num_classes x 1
+        cos_th = torch.matmul(torch.transpose(w_norm, 0, 1), x_norm)  #num_classes x num_classes
+        cos_th_fc = nn.Linear(in_features = num_classes, out_features = 1)(cos_th) #num_classes x 1
         
         final_cos = cos_th_fc - self.m
         
-        one_hot = F.one_hot(labels, 10572) #batch_size x num_classes
+        one_hot = F.one_hot(labels, num_classes) #batch_size x num_classes
         one_hot = one_hot.float()
-        logits = torch.matmul(one_hot,final_cos) + torch.matmul((1 - one_hot), cos_th_fc)        
+        logits = torch.matmul(one_hot, final_cos) + torch.matmul((1 - one_hot), cos_th_fc)        
         logits = logits * self.s
         
         return logits
